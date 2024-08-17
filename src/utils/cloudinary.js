@@ -3,9 +3,9 @@ import fs from "fs";
 
 // Configuration
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: "debffb5tk",
+  api_key: "767839345551917",
+  api_secret: "8Nm-65hsrASsxGIC4fyicX4yCJI",
 });
 
 const uploadOnCloudinary = async (localPath) => {
@@ -18,7 +18,10 @@ const uploadOnCloudinary = async (localPath) => {
       resource_type: "auto",
     });
     // file has been successfully uploaded:-
+    
     console.log("file successfully uploaded on cloudinary" + response.url);
+    fs.unlinkSync(localPath); // images upload hojayegi fir bhi apne local path se delete kardo aur upload nahi ho paayegi fir bhi delete karna hai.
+
     return response;
   } catch (err) {
     // agar koi error aa jata hai toh jo humne apne local server/ saved temporary pr jo file upload kari hai usko unlink/delete kardete hai.
