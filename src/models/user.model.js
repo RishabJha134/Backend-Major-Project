@@ -56,7 +56,6 @@ userSchema.pre("save", async function (next) {
     return next();
   }
 
-  
   this.password = await bcrypt.hash(this.password, 11);
   next();
 });
@@ -94,9 +93,6 @@ userSchema.methods.generateRefreshToken = async function () {
   const token = await jwt.sign(
     {
       _id: this._id,
-      email: this.email,
-      username: this.username,
-      fullName: this.fullName,
     },
     process.env.REFRESH_TOKEN_SECRET,
     {

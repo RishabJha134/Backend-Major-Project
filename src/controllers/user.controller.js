@@ -13,6 +13,25 @@ const userSchema = z.object({
   password: z.string().min(2, "Password must be at least 6 characters long"),
 });
 
+const generateAccessAndRefereshTokens = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+
+    // save refresh token in database:- access token,refresh token to hum user ko dedete hai but refresh token hum apne database me bhi save karke rakhte hai taaki user se baar baar password nh puchna pade.
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(
+      500,
+      "Something went wrong while generating referesh and access token"
+    );
+  }
+};
+
 const registerUser = asyncHandler(async (req, res) => {
   // Step 0: Get user details from frontend
   const { fullName, email, username, password } = req.body;
@@ -46,22 +65,6 @@ const registerUser = asyncHandler(async (req, res) => {
   //   throw new ApiError(400, "All fields are required");
   // }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   // ----------------------------------------------------------------
   // step2:- check if user exist or not:-
   const existedUser = await User.findOne({
@@ -73,21 +76,10 @@ const registerUser = asyncHandler(async (req, res) => {
   }
   console.log(existedUser);
 
-
-
-
-
-
-
-
-
-
-
-  
   // ----------------------------------------------------------------
   //   step3:- check for images and check for avatar in local path :-
   const avatarLocalPath = req.files?.avatar[0]?.path;
-  
+
   let coverImageLocalPath;
   if (
     req.files &&
@@ -96,8 +88,6 @@ const registerUser = asyncHandler(async (req, res) => {
   ) {
     coverImageLocalPath = req.files.coverImage[0].path;
   }
-
-  
 
   // we check only beacuse avatar is required field:-
   if (!avatarLocalPath) {
@@ -111,7 +101,7 @@ const registerUser = asyncHandler(async (req, res) => {
   //   step4:- upload images to cloudinary:-
   const avatar = await uploadOnCloudinary(avatarLocalPath);
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
- 
+
   // we check only beacuse avatar is required field:-
   if (!avatar) {
     throw new ApiError(400, "Failed to upload images to cloudinary");
@@ -122,8 +112,8 @@ const registerUser = asyncHandler(async (req, res) => {
   const user = await User.create({
     fullName,
     avatar: avatar.url,
-    coverImage:  coverImage? coverImage.url : "",
-  
+    coverImage: coverImage ? coverImage.url : "",
+
     email,
     password,
     username: username.toLowerCase(),
@@ -144,4 +134,105 @@ const registerUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, createdUser, "User registered successfully"));
 });
 
-export { registerUser };
+const loginUser = asyncHandler(async (req, res) => {
+  // todo:-
+  // step1:- get email and password from frontend by req.body from login page:-
+  // step2:- add validation checks:- and find user check is it in database or not:-
+  // step3:- compare login input password and database saved hashed password:-
+  // step4:- if true -> generate access token and refresh token:- else return error:-
+  // step5:- send access token and refresh token in frontend by help of cookies:-
+  // step6:- return response:-
+
+  // step1:-get email and password from frontend by req.body from login page
+  const { email, username, password } = req.body;
+
+  // step2:- add validation checks:-
+  if (!(email || username)) {
+    throw new ApiError(400, "Please provide email or username");
+  }
+
+  // step3:-find user check is it in database or not:-
+  const user = await User.findOne({
+    $or: [{ email }, { username }],
+  });
+
+  if (!user) {
+    throw new ApiError(401, "user does not exist");
+  }
+
+  // step4:- compare login input password and database saved hashed password:-
+  const isPasswordValid = await user.isPasswordCorrect(password);
+
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Invalid password");
+  }
+
+  // step5:- generate access token and refresh token
+  const { accessToken, refreshToken } = await generateAccessAndRefereshTokens(
+    user._id
+  );
+
+  // optional step only update logged in user:-
+  // we dont want to send password and refresh token to the user frontend after login:-
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  // step6:- send access token and refresh token in frontend by help of cookies:-
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  res.cookie("accessToken", accessToken, options);
+  res.cookie("refreshToken", refreshToken, options);
+
+  // why send access token and refresh token?
+  // because for mobile app there is no cookies set  then this is important and required:-
+  // because khud apni taraf se want to save access token and refresh token in local storage or any other reason:-
+
+  return res.json(
+    new ApiResponse(
+      200,
+      {
+        user: loggedInUser,
+        accessToken,
+        refreshToken,
+      },
+      "User logged In Successfully"
+    )
+  );
+});
+
+const logoutUser = asyncHandler(async (req, res) => {
+  // step1:- remove cookies access token and refresh token from user frontend:-
+  // step2:- jo refresh token humne user ke andar database me save karwaya tha line no 25 me save karwaya the usko bhi to remove karna hoga sir.
+  const userAfterLogout = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set:{
+        refreshToken:undefined,
+      }
+    },
+    {
+      new: true,
+    }
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  res.clearCookie("accessToken", options);
+  res.clearCookie("refreshToken", options);
+
+  return res.status(200).json(new ApiResponse(200, {}, "User logged Out"));
+});
+
+export { registerUser, loginUser, logoutUser };
+
+// why send access token and refresh token?
+// if user refresh the page or close the browser then access token will be expired and user will be logged out.
+// so by storing refresh token in cookies we can get access token when user refresh the page or close the browser.
+// so that we can automatically login user after refresh the page.
