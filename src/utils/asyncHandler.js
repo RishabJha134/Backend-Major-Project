@@ -10,6 +10,7 @@ function asyncHandler(requestHandler) {
     try {
       await requestHandler(req, res, next);
     } catch (err) {
+      
       console.log(err); // Passes the error to the next middleware (like an error-handling middleware)
     }
   };

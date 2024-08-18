@@ -4,30 +4,33 @@ import { ApiError } from "../utils/ApiError.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { User } from "./../models/user.model.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import jwt from "jsonwebtoken";
 
 // Define a Zod schema for user details
 const userSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters long"),
   email: z.string().email("Please enter a valid email address"),
-  username: z.string().min(2, "Username must be at least 3 characters long"),
-  password: z.string().min(2, "Password must be at least 6 characters long"),
+  username: z.string().min(2, "Username must be at least 2 characters long"),
+  password: z.string().min(2, "Password must be at least 2 characters long"),
 });
 
-const generateAccessAndRefereshTokens = async (userId) => {
+const generateAccessAndRefreshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
-    const accessToken = user.generateAccessToken();
-    const refreshToken = user.generateRefreshToken();
+    const accessToken = await user.generateAccessToken();
+    const refreshToken = await user.generateRefreshToken();
 
-    // save refresh token in database:- access token,refresh token to hum user ko dedete hai but refresh token hum apne database me bhi save karke rakhte hai taaki user se baar baar password nh puchna pade.
+    // Save refresh token in the database:
+    // We give the user both the access and refresh tokens, but we also save the refresh token in our database so that the user doesn’t need to re-enter their password repeatedly.
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
 
+    console.log("from controller: " + accessToken, refreshToken);
     return { accessToken, refreshToken };
   } catch (error) {
     throw new ApiError(
       500,
-      "Something went wrong while generating referesh and access token"
+      "Something went wrong while generating refresh and access tokens"
     );
   }
 };
@@ -56,28 +59,22 @@ const registerUser = asyncHandler(async (req, res) => {
       return res.status(400).json({ errors: err.errors.map((e) => e.message) });
     }
     // Handle any other errors
-    res.status(500).send("Internal Server Error");
+    return res.status(500).send("Internal Server Error");
   }
 
-  // if (
-  //   [fullName, email, username, password].some((field) => field?.trim() === "")
-  // ) {
-  //   throw new ApiError(400, "All fields are required");
-  // }
-
   // ----------------------------------------------------------------
-  // step2:- check if user exist or not:-
+  // Step 2: Check if user exists or not:
   const existedUser = await User.findOne({
     $or: [{ username }, { email }],
   });
 
   if (existedUser) {
-    throw new ApiError(409, "user with email or username already exists");
+    throw new ApiError(409, "User with email or username already exists");
   }
   console.log(existedUser);
 
   // ----------------------------------------------------------------
-  //   step3:- check for images and check for avatar in local path :-
+  // Step 3: Check for images and check for avatar in local path:
   const avatarLocalPath = req.files?.avatar[0]?.path;
 
   let coverImageLocalPath;
@@ -89,31 +86,32 @@ const registerUser = asyncHandler(async (req, res) => {
     coverImageLocalPath = req.files.coverImage[0].path;
   }
 
-  // we check only beacuse avatar is required field:-
+  // We check only because the avatar is a required field:
   if (!avatarLocalPath) {
     throw new ApiError(
       400,
-      "Please provide an avatar or cover image by user in input field"
+      "Please provide an avatar or cover image in the input field"
     );
   }
 
   // ----------------------------------------------------------------
-  //   step4:- upload images to cloudinary:-
+  // Step 4: Upload images to Cloudinary:
   const avatar = await uploadOnCloudinary(avatarLocalPath);
-  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+  const coverImage = coverImageLocalPath
+    ? await uploadOnCloudinary(coverImageLocalPath)
+    : null;
 
-  // we check only beacuse avatar is required field:-
+  // We check only because the avatar is a required field:
   if (!avatar) {
-    throw new ApiError(400, "Failed to upload images to cloudinary");
+    throw new ApiError(400, "Failed to upload images to Cloudinary");
   }
 
   // ----------------------------------------------------------------
-  // step5:- create new object and put in database:-
+  // Step 5: Create a new object and put it in the database:
   const user = await User.create({
     fullName,
     avatar: avatar.url,
     coverImage: coverImage ? coverImage.url : "",
-
     email,
     password,
     username: username.toLowerCase(),
@@ -121,12 +119,13 @@ const registerUser = asyncHandler(async (req, res) => {
 
   console.log(user);
 
-  // step6:- remove password and refresh token field from response:-  // hum user ko password and refreshToken nahi dena chahte hai.
-  const createdUser = await User.findOne(user._id).select(
+  // Step 6: Remove password and refresh token fields from the response:
+  // We don’t want to send the password and refresh token to the user.
+  const createdUser = await User.findById(user._id).select(
     "-password -refreshToken"
   );
   if (!createdUser) {
-    throw new ApiError(500, "something went wrong while registration the user");
+    throw new ApiError(500, "Something went wrong while registering the user");
   }
 
   return res
@@ -135,50 +134,52 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 const loginUser = asyncHandler(async (req, res) => {
-  // todo:-
-  // step1:- get email and password from frontend by req.body from login page:-
-  // step2:- add validation checks:- and find user check is it in database or not:-
-  // step3:- compare login input password and database saved hashed password:-
-  // step4:- if true -> generate access token and refresh token:- else return error:-
-  // step5:- send access token and refresh token in frontend by help of cookies:-
-  // step6:- return response:-
+  // TODO:
+  // Step 1: Get email and password from frontend via req.body from login page:
+  // Step 2: Add validation checks and find user in the database:
+  // Step 3: Compare login input password and database saved hashed password:
+  // Step 4: If true -> generate access token and refresh token, else return error:
+  // Step 5: Send access token and refresh token to frontend via cookies:
+  // Step 6: Return response:
 
-  // step1:-get email and password from frontend by req.body from login page
+  // Step 1: Get email and password from frontend via req.body from login page
   const { email, username, password } = req.body;
+  console.log(email, username, password);
 
-  // step2:- add validation checks:-
+  // Step 2: Add validation checks:
   if (!(email || username)) {
     throw new ApiError(400, "Please provide email or username");
   }
 
-  // step3:-find user check is it in database or not:-
+  // Step 3: Find user in the database:
   const user = await User.findOne({
     $or: [{ email }, { username }],
   });
 
   if (!user) {
-    throw new ApiError(401, "user does not exist");
+    throw new ApiError(401, "User does not exist");
   }
 
-  // step4:- compare login input password and database saved hashed password:-
+  // Step 4: Compare login input password and database saved hashed password:
   const isPasswordValid = await user.isPasswordCorrect(password);
 
   if (!isPasswordValid) {
     throw new ApiError(401, "Invalid password");
   }
 
-  // step5:- generate access token and refresh token
-  const { accessToken, refreshToken } = await generateAccessAndRefereshTokens(
+  // Step 5: Generate access token and refresh token
+  const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
     user._id
   );
+  console.log("Access token -> from controller:", accessToken, refreshToken);
 
-  // optional step only update logged in user:-
-  // we dont want to send password and refresh token to the user frontend after login:-
+  // Optional: Only update the logged-in user:
+  // We don’t want to send the password and refresh token to the frontend after login:
   const loggedInUser = await User.findById(user._id).select(
     "-password -refreshToken"
   );
 
-  // step6:- send access token and refresh token in frontend by help of cookies:-
+  // Step 6: Send access token and refresh token to frontend via cookies:
   const options = {
     httpOnly: true,
     secure: true,
@@ -187,9 +188,10 @@ const loginUser = asyncHandler(async (req, res) => {
   res.cookie("accessToken", accessToken, options);
   res.cookie("refreshToken", refreshToken, options);
 
-  // why send access token and refresh token?
-  // because for mobile app there is no cookies set  then this is important and required:-
-  // because khud apni taraf se want to save access token and refresh token in local storage or any other reason:-
+  // Why send access token and refresh token?
+  // Because for mobile apps, cookies are not set, so this is important and required.
+  // Users may want to save the access token and refresh tokenimport { bcrypt } from 'bcrypt';
+ in local storage or for any other reason.
 
   return res.json(
     new ApiResponse(
@@ -199,20 +201,20 @@ const loginUser = asyncHandler(async (req, res) => {
         accessToken,
         refreshToken,
       },
-      "User logged In Successfully"
+      "User logged in successfully"
     )
   );
 });
 
 const logoutUser = asyncHandler(async (req, res) => {
-  // step1:- remove cookies access token and refresh token from user frontend:-
-  // step2:- jo refresh token humne user ke andar database me save karwaya tha line no 25 me save karwaya the usko bhi to remove karna hoga sir.
+  // Step 1: Remove access token and refresh token cookies from frontend:
+  // Step 2: We also need to remove the refresh token that we saved in the user's database record (see line 25).
   const userAfterLogout = await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set:{
-        refreshToken:undefined,
-      }
+      $set: {
+        refreshToken: undefined,
+      },
     },
     {
       new: true,
@@ -227,12 +229,76 @@ const logoutUser = asyncHandler(async (req, res) => {
   res.clearCookie("accessToken", options);
   res.clearCookie("refreshToken", options);
 
-  return res.status(200).json(new ApiResponse(200, {}, "User logged Out"));
+  return res.status(200).json(new ApiResponse(200, {}, "User logged out"));
 });
 
-export { registerUser, loginUser, logoutUser };
+const refreshAccessToken = asyncHandler(async (req, res) => {
 
-// why send access token and refresh token?
-// if user refresh the page or close the browser then access token will be expired and user will be logged out.
-// so by storing refresh token in cookies we can get access token when user refresh the page or close the browser.
-// so that we can automatically login user after refresh the page.
+  // ----------------------------------------------------------------
+  // step1:- recieve incoming Refresh Token from frontend:-
+  const incomingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken; // req.body for andriod mobile app:-
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "unauthorized request"); // because refresh token wahi send kr sakta hai frontend se jo login hoga matlab authorized hoga:-
+  }
+
+
+
+
+  // ----------------------------------------------------------------
+  // step2:- verify incoming Refresh Token which is coming from frontend is it valid or not:-
+  const decodedToken = await jwt.verify(
+    incomingRefreshToken,
+    process.env.REFRESH_TOKEN_SECRET
+  );
+  const user = await User.findById(decodedToken?._id);
+  if (!user) {
+    throw new ApiError(401, "Invalid refresh token"); //because refresh token verification is failed.
+  }
+
+
+
+
+
+
+
+  // ----------------------------------------------------------------
+  // step3:- check incoming Refresh Token jo frontend se aarha hai aur refresh token jo humne database me save karwaya tha generate karte time:-
+
+  if(incomingRefreshToken !== user?.refreshToken){
+    throw new ApiError(401, "refresh token is expired or used or not valid"); 
+
+
+  }
+
+  // ----------------------------------------------------------------
+  // step4:- if refresh token is valid then generate a new access token and new refresh token save it in the database:-
+  const options={
+    httpOnly:true,
+    secure:true,
+  }
+
+  const {accessToken,newRefreshToken} = await generateAccessAndRefreshTokens(user._id);
+
+  res.cookie("accessToken",accessToken,options);
+  res.cookie("refreshToken",newRefreshToken,options);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,{
+        accessToken,
+        refreshToken:newRefreshToken,
+        
+      },
+      "AccessToken refreshed"
+    )
+  )
+
+});
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken };
+
+// Why send access token and refresh token?
+// If the user refreshes the page or closes the browser, the access token will expire and the user will be logged out.
+// By storing the refresh token in cookies, we can generate a new access token when the user refreshes the page or reopens the browser.
+// This allows us to automatically log in the user after they refresh the page.

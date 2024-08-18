@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken"
 
 const userSchema = new mongoose.Schema(
   {
@@ -71,36 +72,43 @@ userSchema.methods.isPasswordCorrect = async function (password) {
 // step3:- generating a token for user on successful login:-
 
 // access token:-
+// Access token
 userSchema.methods.generateAccessToken = async function () {
-  const token = await jwt.sign(
-    {
-      _id: this._id,
-      email: this.email,
-      username: this.username,
-      fullName: this.fullName,
-    },
-    process.env.ACCESS_TOKEN_SECRET,
-    {
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
-    }
-  );
-
-  return token;
+  try {
+    const token = await jwt.sign(
+      {
+        _id: this._id,
+        email: this.email,
+        username: this.username,
+        fullName: this.fullName,
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      {
+        expiresIn: process.env.ACCESS_TOKEN_EXPIRY, // default to 15 minutes if not set
+      }
+    );
+    return token;
+  } catch (error) {
+    throw new Error(`Error generating access token: ${error.message}`);
+  }
 };
 
-//  refresh token:-
+// Refresh token
 userSchema.methods.generateRefreshToken = async function () {
-  const token = await jwt.sign(
-    {
-      _id: this._id,
-    },
-    process.env.REFRESH_TOKEN_SECRET,
-    {
-      expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
-    }
-  );
-
-  return token;
+  try {
+    const token = await jwt.sign(
+      { _id: this._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      {
+        expiresIn: process.env.REFRESH_TOKEN_EXPIRY, // default to 7 days if not set
+      }
+    );
+    return token;
+  } catch (error) {
+    throw new Error(`Error generating refresh token: ${error.message}`);
+  }
 };
+
+
 
 export const User = mongoose.model("User", userSchema);
