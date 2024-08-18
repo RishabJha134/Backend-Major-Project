@@ -247,52 +247,58 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 
   // ----------------------------------------------------------------
   // step2:- verify incoming Refresh Token which is coming from frontend is it valid or not:-
-  const decodedToken = await jwt.verify(
-    incomingRefreshToken,
-    process.env.REFRESH_TOKEN_SECRET
-  );
-  const user = await User.findById(decodedToken?._id);
-  if (!user) {
-    throw new ApiError(401, "Invalid refresh token"); //because refresh token verification is failed.
-  }
-
-
-
-
-
-
-
-  // ----------------------------------------------------------------
-  // step3:- check incoming Refresh Token jo frontend se aarha hai aur refresh token jo humne database me save karwaya tha generate karte time:-
-
-  if(incomingRefreshToken !== user?.refreshToken){
-    throw new ApiError(401, "refresh token is expired or used or not valid"); 
-
-
-  }
-
-  // ----------------------------------------------------------------
-  // step4:- if refresh token is valid then generate a new access token and new refresh token save it in the database:-
-  const options={
-    httpOnly:true,
-    secure:true,
-  }
-
-  const {accessToken,newRefreshToken} = await generateAccessAndRefreshTokens(user._id);
-
-  res.cookie("accessToken",accessToken,options);
-  res.cookie("refreshToken",newRefreshToken,options);
-
-  return res.status(200).json(
-    new ApiResponse(
-      200,{
-        accessToken,
-        refreshToken:newRefreshToken,
-        
-      },
-      "AccessToken refreshed"
+  try {
+    const decodedToken = await jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+    const user = await User.findById(decodedToken?._id);
+    if (!user) {
+      throw new ApiError(401, "Invalid refresh token"); //because refresh token verification is failed.
+    }
+  
+  
+  
+  
+  
+  
+  
+    // ----------------------------------------------------------------
+    // step3:- check incoming Refresh Token jo frontend se aarha hai aur refresh token jo humne database me save karwaya tha generate karte time:-
+  
+    if(incomingRefreshToken !== user?.refreshToken){
+      throw new ApiError(401, "refresh token is expired or used or not valid"); 
+  
+  
+    }
+  
+    // ----------------------------------------------------------------
+    // step4:- if refresh token is valid then generate a new access token and new refresh token save it in the database:-
+    const options={
+      httpOnly:true,
+      secure:true,
+    }
+  
+    const {accessToken,newRefreshToken} = await generateAccessAndRefreshTokens(user._id);
+  
+    res.cookie("accessToken",accessToken,options);
+    res.cookie("refreshToken",newRefreshToken,options);
+  
+    return res.status(200).json(
+      new ApiResponse(
+        200,{
+          accessToken,
+          refreshToken:newRefreshToken,
+          
+        },
+        "AccessToken refreshed"
+      )
     )
-  )
+  } catch (error) {
+    console.error("Error while refreshing access token:", error);
+    throw new ApiError(401, "Error while refreshing access token");
+    
+  }
 
 });
 
