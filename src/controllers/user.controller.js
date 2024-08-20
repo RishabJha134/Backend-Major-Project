@@ -422,6 +422,95 @@ return res.status(200).json(new ApiResponse(200,user,"Cover image updated succes
 
 
 
+const getUserChannelProfile = asyncHandler(async (req,res)=>{
+
+  // find the username of the channel:-
+  const {username} = req.params;
+  if(!username?.trim()){
+    throw new ApiError(400, "Please provide a valid username");
+  }
+
+  const channel = await User.aggregate([
+
+    // pipeline 1.
+    {
+      $match:{
+        username:username?.toLowerCase()
+      }
+    },
+
+    // internally it returns the user_id which matches the username:- here user_id:123abc
+
+    // pipeline 2.  for find total subsribers:- we have to find total kitne channel ne is user_id = 123abc  ko subscribe kar rakha hai.
+    {
+      $lookup:{
+        from:"subscriptions",
+        localField:"_id",
+        foreignField:"channel",
+        as:"subscribers"
+      }
+    },
+
+    // pipeline 3. for find total total kitne channel ko is user_id = 123abc ne susbcsiber kar rakha hai.
+    // user_id=123abc ne total kitne ko subscribe kar rakha hai.
+
+    {
+      $lookup:{
+        from:"subscriptions",
+        localField:"_id",
+        foreignField:"subscriber",
+        as:"subscribed to"
+      }
+    },
+
+    // pipeline 4:- add fields of subscribersCount of user_id=123,abc , channelsSubscribedToCount by user_id=123abc , isSubscribed:-
+    {
+      $addFields: {
+        subscribersCount: {
+            $size: "$subscribers"
+        },
+        channelsSubscribedToCount: {
+            $size: "$subscribedTo"
+        },
+        isSubscribed: {
+            $cond: {
+                if: {$in: [req.user?._id, "$subscribers.subscriber"]},
+                then: true,
+                else: false
+            }
+        }
+    }
+      
+    },
+    // pipeline 5:- hum jis jis filed ko show karwana chahte hai:-
+    {
+      $project: {
+          fullName: 1,
+          username: 1,
+          subscribersCount: 1,
+          channelsSubscribedToCount: 1,
+          isSubscribed: 1,
+          avatar: 1,
+          coverImage: 1,
+          email: 1
+
+      }
+  }
+
+  ])
+
+  console.log(channel);
+
+  if (!channel?.length) {
+    throw new ApiError(404, "channel does not exists")
+}
+
+return res
+.status(200)
+.json(
+    new ApiResponse(200, channel[0], "User channel fetched successfully")
+)
+})
 
 
 
@@ -437,7 +526,10 @@ return res.status(200).json(new ApiResponse(200,user,"Cover image updated succes
 
 
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage };
+
+
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage,getUserChannelProfile };
 
 // Why send access token and refresh token?
 // If the user refreshes the page or closes the browser, the access token will expire and the user will be logged out.
