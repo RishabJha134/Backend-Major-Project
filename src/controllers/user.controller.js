@@ -581,7 +581,7 @@ const getWatchHistory = asyncHandler(async(req,res)=>{
       )
   )
 
-  
+
 })
 
 
@@ -598,7 +598,7 @@ const getWatchHistory = asyncHandler(async(req,res)=>{
 
 
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage,getUserChannelProfile };
+export { registerUser, loginUser, logoutUser, refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage,getUserChannelProfile,getWatchHistory };
 
 // Why send access token and refresh token?
 // If the user refreshes the page or closes the browser, the access token will expire and the user will be logged out.
